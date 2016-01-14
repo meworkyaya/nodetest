@@ -1,0 +1,11 @@
+{
+  "name": "raw",
+  "version": "1.0.0",
+  "description": "raw test code for node.js",
+  "main": "test.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC"
+}

@@ -1,0 +1,246 @@
+./wrk -c1000 -d10 -t4 http://localhost:1337/
+./wrk -c1000 -d10 -t4 http://laforge.local/robots.txt
+./wrk -c10 -d10 -t4 http://laforge.local/testdate.php
+./wrk -c1000 -d10 -t4 http://localhost:1337/
+
+
+
+
+тупых нагрузочных теста на одном компе
+
+каждый раз гоняем 10 секунд в упор 1000 коннектов (для пхп меньше)
+
+1) =============================
+node.js: - примечание - на все ядра не раскидывал!! - на одном ядре
+взял 4ю ноду
+
+код:
+
+
+var http = require('http');
+var port = process.env.PORT || 1337;
+
+http.createServer(function(req, res) {
+  res.writeHead(200, { 'Content-Type': 'text/html' });
+  res.end(new Date() + '\n');
+}).listen(port);
+
+console.log('Server running on port %s', port);
+
+**************************
+результат:
+
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency    40.58ms   49.72ms 905.81ms   98.09%
+    Req/Sec     5.81k     1.54k   12.54k    89.00%
+  231394 requests in 10.02s, 40.82MB read
+Requests/sec:  23104.18
+Transfer/sec:      4.08MB
+
+
+Итого:  23104.18  запросов в секунду
+
+
+2) =======================
+nginx + текстовый файл
+
+
+результат
+
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency     8.13ms   24.97ms 516.58ms   96.76%
+    Req/Sec    43.88k    13.62k  136.24k    88.92%
+  1737754 requests in 10.03s, 445.72MB read
+Requests/sec: 173189.10
+Transfer/sec:     44.42MB
+
+
+Итого: 173 189.10 запросов в сек
+
+
+3) ======================
+nginx + php 
+
+код:
+<?php
+
+echo date("Y-m-d");
+
+
+
+Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency   316.42us  141.03us   6.31ms   90.43%
+    Req/Sec     6.44k   424.83     9.00k    80.65%
+  258222 requests in 10.10s, 54.16MB read
+Requests/sec:  25568.51
+Transfer/sec:      5.36MB
+
+Итого: 25 568.51 запросов в сек
+
+
+замечение: пхп из коробки держит сильно меньше коннектов чем node.js
+
+=======================================
+
+4) node.js с кластером
+замечание - в ноде нуб - если можно лучше написать ткните
+
+
+код
+
+var http = require('http');
+var port = process.env.PORT || 1337;
+var cluster = require('cluster');
+var numCPUs = 4;
+
+
+if (cluster.isMaster) {
+  // Fork workers.
+  for (var i = 0; i < numCPUs; i++) {
+    cluster.fork();
+  }
+} else {
+
+	http.createServer(function(req, res) {
+	  res.writeHead(200, { 'Content-Type': 'text/html' });
+	  res.end(new Date() + '\n');
+	}).listen(port);
+}
+
+console.log('Server running on port %s', port);
+
+**************************
+Результаты
+
+4 threads and 1000 connections
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency    25.39ms   74.60ms   1.05s    96.90%
+    Req/Sec    17.36k     3.89k   45.76k    88.16%
+  686061 requests in 10.01s, 121.04MB read
+Requests/sec:  68516.06
+Transfer/sec:     12.09MB
+
+
+
+
+5) ================================
+node.js cluster - отдает текстовый ответ
+
+4 threads and 1000 connections
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency    34.16ms  127.45ms   1.59s    96.34%
+    Req/Sec    20.62k     4.42k   48.15k    90.18%
+  814893 requests in 10.10s, 101.03MB read
+Requests/sec:  80689.08
+Transfer/sec:     10.00MB
+
+
+
+
+
+6) =============================
+golang
+
+код
+
+
+package main
+
+import (
+    "fmt"
+    "net/http"
+)
+
+func handler(w http.ResponseWriter, r *http.Request) {
+    fmt.Fprintf(w, "Hi there, I love %s!", r.URL.Path[1:])
+}
+
+func main() {
+    http.HandleFunc("/", handler)
+    http.ListenAndServe(":8080", nil)
+}
+
+
+*************************
+results
+
+
+4 threads and 1000 connections
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency    10.75ms   35.16ms 442.94ms   96.79%
+    Req/Sec    41.60k    12.50k   80.83k    77.75%
+  1665173 requests in 10.08s, 214.38MB read
+Requests/sec: 165233.34
+Transfer/sec:     21.27MB
+
+
+Итого Requests/sec: 165233.34
+
+
+
+=====================================
+golang - echo date
+
+package main
+
+import (
+    "fmt"
+    "net/http"
+    "time"
+)
+
+func handler(w http.ResponseWriter, r *http.Request) {
+    fmt.Fprintf(w, "Hi there, I love %s!", r.URL.Path[1:])
+
+	t := time.Now()
+	ts := t.Format("2006-01-02 15:04:05.000")
+	fmt.Fprintf( w, ts )
+}
+
+func main() {
+    http.HandleFunc("/", handler)
+    http.ListenAndServe(":8080", nil)
+}
+
+*******************************
+
+4 threads and 1000 connections
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency     8.94ms   32.99ms 857.24ms   98.54%
+    Req/Sec    40.95k    11.49k  107.70k    92.61%
+  1551773 requests in 10.06s, 233.82MB read
+Requests/sec: 154253.14
+Transfer/sec:     23.24MB
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+==========================================
+===========================================
+
+Итого:
+- nginx + статика рвет всех нафик
+- следующий - node.js с кластером
+- и потом почти на одном уровне node.js без кластера
+- и nginx + пхп
+
+
+
+
